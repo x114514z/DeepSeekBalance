@@ -28,6 +28,7 @@ public class MainActivity extends Activity {
     private WebView webView;
     private static final String PREFS_NAME = "deepseek_prefs";
     private static final String KEY_API = "saved_api_key";
+    private static final String KEY_BATCH_KEYS = "saved_batch_keys";
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
@@ -150,6 +151,15 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void clearApiKey() { prefs.edit().remove(KEY_API).apply(); }
+
+        @JavascriptInterface
+        public void saveBatchKeys(String keysJson) { prefs.edit().putString(KEY_BATCH_KEYS, keysJson).apply(); }
+
+        @JavascriptInterface
+        public String getSavedBatchKeys() { return prefs.getString(KEY_BATCH_KEYS, ""); }
+
+        @JavascriptInterface
+        public void clearBatchKeys() { prefs.edit().remove(KEY_BATCH_KEYS).apply(); }
 
         private String readStream(InputStream is) throws IOException {
             BufferedReader r = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));

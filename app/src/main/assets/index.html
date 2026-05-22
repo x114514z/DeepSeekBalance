@@ -65,6 +65,8 @@ window.onload = function() {
     try {
       var saved = AndroidBridge.getSavedApiKey();
       if (saved) document.getElementById('keyInput').value = saved;
+      var batch = AndroidBridge.getSavedBatchKeys();
+      if (batch) document.getElementById('batchInput').value = batch;
     } catch(e) {}
   }
 };
@@ -104,6 +106,7 @@ function queryBatch() {
   try {
     var resp = AndroidBridge.batchQuery(JSON.stringify(keys));
     var results = JSON.parse(resp);
+    AndroidBridge.saveBatchKeys(document.getElementById('batchInput').value);
     showResult(results);
   } catch(e) {
     alert('批量查询失败: ' + e);
@@ -137,6 +140,9 @@ function esc(s) {
 function clearBatch() {
   document.getElementById('batchInput').value = '';
   document.getElementById('results').innerHTML = '';
+  if (typeof AndroidBridge !== 'undefined') {
+    try { AndroidBridge.clearBatchKeys(); } catch(e) {}
+  }
 }
 
 function pasteFromClipboard() {
