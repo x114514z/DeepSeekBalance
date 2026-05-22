@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>DeepSeek 余额查询</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font:16px sans-serif;background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);color:#eee;min-height:100vh;display:flex;flex-direction:column}
+.header{padding:24px 16px 12px;text-align:center}
+.header h1{font-size:22px;color:#7c83ff;margin-bottom:4px}
+.header p{font-size:13px;color:#888}
+.card{margin:12px 16px;padding:16px;background:rgba(255,255,255,0.06);border-radius:12px;border:1px solid rgba(255,255,255,0.08)}
+.card h3{font-size:14px;color:#aaa;margin-bottom:8px}
+input,textarea{width:100%;padding:12px;margin:4px 0;border:1px solid rgba(255,255,255,0.12);background:rgba(0,0,0,0.25);color:#eee;border-radius:8px;font-size:14px;outline:none}
+input:focus,textarea:focus{border-color:#7c83ff}
+textarea{height:120px;resize:vertical;font-family:monospace;font-size:12px}
+.btn-row{display:flex;gap:8px;margin-top:8px}
+button{flex:1;padding:14px;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer}
+.btn-primary{background:#7c83ff;color:#fff}
+.btn-secondary{background:rgba(255,255,255,0.1);color:#ccc}
+.btn-danger{background:#e74c3c;color:#fff;flex:0.5}
+#results{margin:8px 16px 80px}
+.result-item{background:rgba(0,0,0,0.25);border-radius:10px;padding:12px;margin:8px 0;border-left:3px solid #7c83ff;font-size:13px;word-break:break-all}
+.result-item.error{border-left-color:#e74c3c}
+.result-item .key{color:#888;font-size:11px}
+.result-item .vals{display:flex;gap:16px;flex-wrap:wrap;margin-top:4px}
+.result-item .val{text-align:center}
+.result-item .val .num{font-size:18px;font-weight:700;color:#7c83ff}
+.result-item .val .lbl{font-size:10px;color:#888}
+.status-ok{color:#2ecc71!important}
+.status-err{color:#e74c3c!important}
+</style>
+</head>
+<body>
+
+<div class="header">
+<h1>🔍 DeepSeek 余额查询</h1>
+<p>支持单 Key 查询 & 批量查询</p>
+</div>
+
+<div class="card">
+<h3>API Key（单个查询）</h3>
+<input id="keyInput" type="password" placeholder="sk-..." autocomplete="off">
+<div class="btn-row">
+<button class="btn-primary" onclick="querySingle()">查询余额</button>
+<button class="btn-secondary" onclick="pasteFromClipboard()">粘贴</button>
+</div>
+</div>
+
+<div class="card">
+<h3>批量查询（每行一个 Key）</h3>
+<textarea id="batchInput" placeholder="sk-xxx&#10;sk-yyy&#10;sk-zzz"></textarea>
+<div class="btn-row">
+<button class="btn-primary" onclick="queryBatch()">批量查询</button>
+<button class="btn-secondary" onclick="clearBatch()">清空</button>
+</div>
+</div>
+
+<div id="results"></div>
+
+<script>
+window.onload = function() {
+  if (typeof AndroidBridge !== 'undefined') {
+    try {
+      var saved = AndroidBridge.getSavedApiKey();
+      if (saved) document.getElementById('keyInput').value = saved;
+    } catch(e) {}
+  }
+};
+
+function querySingle() {
+  var key = document.getElementById('keyInput').value.trim();
+  if (!key) { alert('请输入 API Key'); return; }
+  showResult([{key: key, status: '查询中...'}]);
+  if (typeof AndroidBridge === 'undefined') { alert('Bridge 不可用'); return; }
+  try {
+    var resp = AndroidBridge.httpGet('https://api.deepseek.com/user/balance', key);
+    var data = JSON.parse(resp);
+    var infos = data.balance_infos;
+    if (infos && infos.length > 0) {
+      var info = infos[0];
+      AndroidBridge.saveApiKey(key);
+      showResult([{
+        key: key,
+        total: Number(info.total_balance) || 0,
+        grant: Number(info.granted_balance) || 0,
+        toppedUp: Number(info.topped_up_balance) || 0,
+        status: data.is_available ? '正常' : '不可用'
+      }]);
+    } else {
+      showResult([{key: key, error: '无法解析余额信息'}]);
+    }
+  } catch(e) {
+    showResult([{key: key, error: e.toString()}]);
+  }
+}
+
+function queryBatch() {
+  var text = document.getElementById('batchInput').value.trim();
+  if (!text) { alert('请粘贴 Key 列表'); return; }
+  var keys = text.split(/[\n,;]+/).map(function(k){return k.trim()}).filter(function(k){return k.length>0});
+  if (typeof AndroidBridge === 'undefined') { alert('Bridge 不可用'); return; }
+  try {
+    var resp = AndroidBridge.batchQuery(JSON.stringify(keys));
+    var results = JSON.parse(resp);
+    showResult(results);
+  } catch(e) {
+    alert('批量查询失败: ' + e);
+  }
+}
+
+function showResult(results) {
+  var html = '';
+  results.forEach(function(r) {
+    if (r.error) {
+      html += '<div class="result-item error"><div class="key">' + esc(r.key||'?') + '</div><div class="status-err">❌ ' + esc(r.error) + '</div></div>';
+    } else {
+      var statusClass = r.status === '正常' ? 'status-ok' : 'status-err';
+      html += '<div class="result-item">';
+      html += '<div class="key">' + esc(r.key||'?') + ' <span class="' + statusClass + '">' + esc(r.status||'?') + '</span></div>';
+      html += '<div class="vals">';
+      html += '<div class="val"><div class="num">$' + (Number(r.total) || 0).toFixed(4) + '</div><div class="lbl">总额</div></div>';
+      html += '<div class="val"><div class="num">$' + (Number(r.grant) || 0).toFixed(4) + '</div><div class="lbl">赠送</div></div>';
+      html += '<div class="val"><div class="num">$' + (Number(r.toppedUp) || 0).toFixed(4) + '</div><div class="lbl">充值</div></div>';
+      html += '</div></div>';
+    }
+  });
+  document.getElementById('results').innerHTML = html || '<p style="color:#888;text-align:center;padding:20px">暂无结果</p>';
+}
+
+function esc(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'"');
+}
+
+function clearBatch() {
+  document.getElementById('batchInput').value = '';
+  document.getElementById('results').innerHTML = '';
+}
+
+function pasteFromClipboard() {
+  if (navigator.clipboard) {
+    navigator.clipboard.readText().then(function(t) {
+      document.getElementById('keyInput').value = t.trim();
+    }).catch(function(){ alert('粘贴失败，请手动输入'); });
+  } else {
+    alert('剪贴板不可用，请手动输入');
+  }
+}
+</script>
+</body>
+</html>
